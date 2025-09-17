@@ -53,7 +53,7 @@ jobs:
           zip -r "${ARTIFACT_NAME}.zip" Report
 
       - name: Upload zipped HTML test report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: TestResults/${{ env.ARTIFACT_NAME }}.zip
