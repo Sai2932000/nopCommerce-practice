@@ -1,54 +1,50 @@
-# create the build instance 
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:9.0-alpine AS build
+# ==========================================
+# Stage 1 - Build
+# ==========================================
+FROM mcr.microsoft.com/dotnet/sdk:9.0-alpine AS build
 
-ARG TARGETPLATFORM
-ARG BUILDPLATFORM
+WORKDIR /src
 
-WORKDIR /src                                                                    
-COPY ./src ./
+# Copy entire repository
+COPY . .
 
-# build solution   
-RUN dotnet build NopCommerce.sln --no-incremental -c Release
+# Move to Nop.Web project
+WORKDIR /src/src/Presentation/Nop.Web
 
-# publish project
-WORKDIR /src/Presentation/Nop.Web   
-RUN dotnet publish Nop.Web.csproj -c Release -o /app/published
+# Restore NuGet packages
+RUN dotnet restore Nop.Web.csproj
 
-WORKDIR /app/published
+# Publish application
+RUN dotnet publish \
+    Nop.Web.csproj \
+    -c Release \
+    -o /app/publish \
+    --no-restore
 
-RUN mkdir logs bin
+# ==========================================
+# Stage 2 - Runtime
+# ==========================================
+FROM mcr.microsoft.com/dotnet/aspnet:9.0-alpine
 
-RUN chmod 775 App_Data \
-              App_Data/DataProtectionKeys \
-              bin \
-              logs \
-              Plugins \
-              wwwroot/bundles \
-              wwwroot/db_backups \
-              wwwroot/files/exportimport \
-              wwwroot/icons \
-              wwwroot/images \
-              wwwroot/images/thumbs \
-              wwwroot/images/uploaded \
-			  wwwroot/sitemaps
+LABEL author="saikumarthumma"
+LABEL project="nopCommerce"
+LABEL version="5.0"
+LABEL description="nopCommerce ASP.NET Core application using Docker multi-stage build"
+LABEL maintainer="saikumarthumma"
 
-# create the runtime instance 
-FROM mcr.microsoft.com/dotnet/aspnet:9.0-alpine AS runtime 
-
-# add globalization support
-RUN apk add --no-cache icu-libs icu-data-full
-ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
-
-# installs required packages
-RUN apk add tiff --no-cache --repository http://dl-3.alpinelinux.org/alpine/edge/main/ --allow-untrusted
-RUN apk add libgdiplus --no-cache --repository http://dl-3.alpinelinux.org/alpine/edge/community/ --allow-untrusted
-RUN apk add libc-dev tzdata gcompat --no-cache
+# Create non-root user
+RUN addgroup -S nop && \
+    adduser -S nop-user -G nop -h /app
 
 WORKDIR /app
 
-COPY --from=build /app/published .
+# Copy published application
+COPY --from=build --chown=nop-user:nop /app/publish .
 
-ENV ASPNETCORE_URLS=http://+:80
-EXPOSE 80
-                            
+# Run as non-root
+USER nop-user
+
+# Expose application port
+EXPOSE 8080
+
 ENTRYPOINT ["dotnet", "Nop.Web.dll"]
